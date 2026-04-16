@@ -1,0 +1,60 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "crtkb"
+version = "0.1.0"
+description = "Cognitive Red Teaming Knowledge Base — a Neo4j-backed knowledge graph for offensive security tradecraft"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    # Core graph framework
+    "neo4j>=5.17.0",
+    "neo4j-graphrag>=1.4.0",
+
+    # Data models and configuration
+    "pydantic>=2.6.3",
+    "pydantic-settings>=2.2.0",
+
+    # Data parsing
+    "pyyaml>=6.0.1",
+    "rdflib>=7.0.0",
+
+    # Embeddings
+    "sentence-transformers>=3.0.0",
+
+    # Evaluation
+    "ragas>=0.2.0",
+
+    # Observability
+    "langfuse>=2.40.0",
+
+    # Utilities
+    "tqdm>=4.66.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5.0",
+    "mypy>=1.10",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/crtkb"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

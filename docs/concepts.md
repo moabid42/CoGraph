@@ -37,15 +37,32 @@ The answers are scattered across dozens of sources: MITRE ATT&CK, blog posts, to
 2. **Structuring** it into a knowledge graph (nodes and edges)
 3. **Querying** the graph with natural language, getting answers with citations
 
-```
- Sources                    Knowledge Graph               Answers
-┌──────────┐              ┌─────────────────┐         ┌────────────────┐
-│ ATT&CK   │──parser──▶   │  (Technique)     │         │ "Kerberoasting  │
-│ Atomic RT │──parser──▶   │    ──USES──▶     │──RAG──▶ │  (T1558.003)    │
-│ LOLBAS   │──parser──▶   │  (Tool)          │         │  uses Rubeus    │
-│ Blog post│──LLM────▶   │    ──MITIGATES──▶ │         │  [mitre-attack]"│
-└──────────┘              │  (Defense)       │         └────────────────┘
-                          └─────────────────┘
+```mermaid
+flowchart LR
+    subgraph Sources
+        A1[ATT&CK STIX]
+        A2[Atomic Red Team]
+        A3[LOLBAS]
+        A4[Blog Posts]
+    end
+
+    subgraph KG["Knowledge Graph (Neo4j)"]
+        N1((Technique))
+        N2((Tool))
+        N3((Defense))
+        N1 -->|USES| N2
+        N3 -->|MITIGATES| N1
+    end
+
+    subgraph Answers
+        Q["Kerberoasting (T1558.003)\nuses Rubeus\n[mitre-attack]"]
+    end
+
+    A1 -->|parser| KG
+    A2 -->|parser| KG
+    A3 -->|parser| KG
+    A4 -->|LLM pipeline| KG
+    KG -->|RAG| Answers
 ```
 
 ---
@@ -57,12 +74,21 @@ The answers are scattered across dozens of sources: MITRE ATT&CK, blog posts, to
 A knowledge graph stores information as **nodes** (things) and **edges** (relationships between things). Think of it like a mind map, but machine-readable.
 
 Example:
-```
-(Mimikatz)──USES_TECHNIQUE──▶(Kerberoasting)──PART_OF_TACTIC──▶(Credential Access)
-     │                              │
-     │                              ├──MITIGATES──(Password Policies)
-     │                              │
-     └──RUNS_ON──▶(Windows)         └──IMPLEMENTS──(Atomic Test #3)
+
+```mermaid
+graph LR
+    Mimikatz((Mimikatz))
+    Kerb((Kerberoasting))
+    CredAccess((Credential Access))
+    PassPol((Password Policies))
+    Win((Windows))
+    AtomicTest((Atomic Test #3))
+
+    Mimikatz -->|USES_TECHNIQUE| Kerb
+    Kerb -->|PART_OF_TACTIC| CredAccess
+    PassPol -->|MITIGATES| Kerb
+    Kerb -->|IMPLEMENTS| AtomicTest
+    Mimikatz -->|RUNS_ON| Win
 ```
 
 Unlike a table in a relational database, a knowledge graph excels at **traversing relationships** — "find all tools used by groups that target Active Directory" is one query, not five JOINs.
@@ -91,6 +117,56 @@ APOC (Awesome Procedures On Cypher) is a Neo4j plugin that adds hundreds of util
 ## 3. The Ontology
 
 An **ontology** is a formal definition of "what kinds of things exist and how they can relate". It's the schema of our knowledge graph. Ours is defined in `src/crtkb/ontology/schema.py`.
+
+### Ontology overview
+
+```mermaid
+graph TB
+    subgraph "ATT&CK Structure"
+        Tactic((Tactic))
+        Technique((Technique))
+        Technique -->|PART_OF_TACTIC| Tactic
+        Technique -->|SUBTECHNIQUE_OF| Technique
+    end
+
+    subgraph "Threat Actors"
+        IntrusionSet((IntrusionSet))
+        Campaign((Campaign))
+        Malware((Malware))
+        Tool((Tool))
+        IntrusionSet -->|USES_TECHNIQUE| Technique
+        IntrusionSet -->|USES_MALWARE| Malware
+        IntrusionSet -->|USES_TOOL| Tool
+        Campaign -->|ATTRIBUTED_TO| IntrusionSet
+        Campaign -->|USES_TECHNIQUE| Technique
+        Malware -->|USES_TECHNIQUE| Technique
+        Tool -->|USES_TECHNIQUE| Technique
+    end
+
+    subgraph "Defensive"
+        Mitigation((Mitigation))
+        DetectionStrategy((DetectionStrategy))
+        Defense((Defense))
+        Mitigation -->|MITIGATES| Technique
+        DetectionStrategy -->|DETECTS| Technique
+        Defense -->|DEFENDS_AGAINST| Technique
+    end
+
+    subgraph "Implementations"
+        Procedure((Procedure))
+        LOLBin((LOLBin))
+        Platform((Platform))
+        Procedure -->|IMPLEMENTS| Technique
+        LOLBin -->|EXECUTES_VIA| Technique
+        Technique -->|RUNS_ON| Platform
+        Procedure -->|RUNS_ON| Platform
+    end
+
+    style Technique fill:#ffccbc,stroke:#bf360c
+    style Tactic fill:#fff9c4,stroke:#f9a825
+    style IntrusionSet fill:#c8e6c9,stroke:#2e7d32
+    style Mitigation fill:#bbdefb,stroke:#1565c0
+```
 
 ### Entity types (13 node labels)
 
@@ -186,6 +262,24 @@ We embed each entity's `name + description` and store the vector as a property o
 
 ### How does vector search work in Neo4j?
 
+```mermaid
+flowchart LR
+    Q["User question:\n'credential theft techniques'"]
+    EMB["BGE-large-en-v1.5\nEmbedding Model"]
+    VEC["[0.23, -0.81, ..., 0.12]\n(1024-dim vector)"]
+    IDX[("Neo4j\nVector Index")]
+    R1["T1003 — Credential Dumping\nscore: 0.94"]
+    R2["T1558 — Kerberos Tickets\nscore: 0.91"]
+    R3["T1110 — Brute Force\nscore: 0.87"]
+
+    Q --> EMB --> VEC --> IDX
+    IDX --> R1
+    IDX --> R2
+    IDX --> R3
+
+    style EMB fill:#e8f4fd,stroke:#1a73e8
+```
+
 Neo4j has built-in **vector indexes**. When you ask "What techniques relate to credential theft?", we:
 1. Embed your question with BGE-large → get a 1024-dim vector
 2. Ask Neo4j: "find the 5 nodes whose embedding vectors are most similar" (cosine similarity)
@@ -227,63 +321,26 @@ vLLM is a high-performance **LLM serving engine** for self-hosted models. If you
 
 The pipeline is for **unstructured sources** (blog posts, wiki pages, tool docs) — content that doesn't have a fixed format. The deterministic parsers handle structured sources; the pipeline handles everything else.
 
-```
-Blog post about Kerberoasting
-         │
-         ▼
-┌─── Stage 1: Source Registration ───┐
-│ Create a Source node in Neo4j      │
-│ Generate a batch_id (UUID)         │
-└────────────────────────────────────┘
-         │
-         ▼
-┌─── Stage 2: Chunking ─────────────┐
-│ Split the text into ~1500-char     │
-│ pieces (chunks) so the LLM can    │
-│ process them one at a time         │
-└────────────────────────────────────┘
-         │
-         ▼
-┌─── Stage 3: Entity Extraction ─────┐
-│ LLM reads each chunk and extracts  │
-│ entities: "Rubeus" (Tool),         │
-│ "T1558.003" (Technique), etc.      │
-└─────────────────────────────────────┘
-         │
-         ▼
-┌─── Stage 4: Relation Extraction ───┐
-│ LLM reads the chunk again, now     │
-│ with the entities from Stage 3,    │
-│ and finds relationships:           │
-│ "Rubeus USES_TECHNIQUE T1558.003"  │
-└─────────────────────────────────────┘
-         │
-         ▼
-┌─── Stage 5: Entity Resolution ─────┐
-│ "Is 'Rubeus' the same as the       │
-│ Rubeus already in our graph?"      │
-│ (See Section 9 below)              │
-└─────────────────────────────────────┘
-         │
-         ▼
-┌─── Stage 6: Quality Filtering ─────┐
-│ Drop junk: low confidence, invalid  │
-│ relationships, generic names like   │
-│ "attack" or "system"               │
-└─────────────────────────────────────┘
-         │
-         ▼
-┌─── Stage 7: Provenance Tagging ────┐
-│ Stamp every entity and relationship │
-│ with: where it came from, when,    │
-│ how confident the extraction was   │
-└─────────────────────────────────────┘
-         │
-         ▼
-┌─── Stage 8: Graph Merge ──────────┐
-│ MERGE into Neo4j: update existing  │
-│ nodes or create new ones           │
-└────────────────────────────────────┘
+```mermaid
+flowchart TD
+    Input["Blog post about Kerberoasting"]
+
+    S1["**Stage 1: Source Registration**\nCreate Source node in Neo4j\nGenerate batch_id (UUID)"]
+    S2["**Stage 2: Chunking**\nSplit text into ~1500-char pieces\nso the LLM can process them"]
+    S3["**Stage 3: Entity Extraction**\nLLM reads each chunk, extracts entities:\nRubeus (Tool), T1558.003 (Technique)"]
+    S4["**Stage 4: Relation Extraction**\nLLM reads chunk again with entities from Stage 3,\nfinds: Rubeus USES_TECHNIQUE T1558.003"]
+    S5["**Stage 5: Entity Resolution**\nIs 'Rubeus' the same as the\nRubeus already in our graph?"]
+    S6["**Stage 6: Quality Filtering**\nDrop low confidence, invalid\nrelationships, generic names"]
+    S7["**Stage 7: Provenance Tagging**\nStamp everything with: source,\ntimestamp, confidence, batch_id"]
+    S8["**Stage 8: Graph Merge**\nMERGE into Neo4j:\nupdate existing or create new"]
+
+    Output[("Neo4j Knowledge Graph")]
+
+    Input --> S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8 --> Output
+
+    style S3 fill:#e8f4fd,stroke:#1a73e8
+    style S4 fill:#e8f4fd,stroke:#1a73e8
+    style S5 fill:#fef3e0,stroke:#f9a825
 ```
 
 ### Why two separate LLM passes?
@@ -310,26 +367,46 @@ These are all the same technique. Without entity resolution, you'd get three sep
 
 We use three increasingly expensive methods, in order:
 
+```mermaid
+flowchart TD
+    Input["New entity from LLM:\n'Kerberos TGS ticket roasting'"]
+
+    T1{"Tier 1: Canonical ID Lookup\n(regex for T/S/G/C/M numbers)"}
+    T1Y["Match found!\nMerge with existing node"]
+    T2{"Tier 2: Embedding Similarity\n(cosine similarity with BGE-large)"}
+    T2High["Score >= 0.88\nMatch found!"]
+    T2Border["Score 0.80 — 0.88\nBorderline..."]
+    T3{"Tier 3: LLM Verdict\n'Are these the same entity?'"}
+    T3Y["LLM says YES\nMerge with existing node"]
+    NewNode["No match anywhere\nCreate new node"]
+
+    Input --> T1
+    T1 -->|"ID found\n(e.g. T1558.003)"| T1Y
+    T1 -->|No ID in text| T2
+    T2 -->|"High similarity"| T2High
+    T2 -->|"Borderline"| T2Border
+    T2 -->|"Score < 0.80"| NewNode
+    T2Border --> T3
+    T3 -->|YES| T3Y
+    T3 -->|NO| NewNode
+
+    style T1 fill:#e8f5e9,stroke:#2e7d32
+    style T2 fill:#e8f4fd,stroke:#1a73e8
+    style T3 fill:#fff3e0,stroke:#ef6c00
+    style NewNode fill:#fce4ec,stroke:#c62828
+```
+
 **Tier 1 — Canonical ID Lookup** (instant, free)
-```
-"Kerberoasting (T1558.003)" → regex finds "T1558.003" → look up in graph → match!
-```
-If the text contains an ATT&CK ID (T-number, S-number, etc.), we extract it with a regex and look it up directly. This catches ~70% of cases.
+
+If the text contains an ATT&CK ID (T-number, S-number, etc.), we extract it with a regex and look it up directly. Example: `"Kerberoasting (T1558.003)"` → regex finds `T1558.003` → look up in graph → match! This catches ~70% of cases.
 
 **Tier 2 — Embedding Similarity** (fast, no LLM needed)
-```
-"Kerberos TGS ticket roasting" → embed → compare to all Technique embeddings
-→ T1558.003 has cosine similarity 0.92 → match! (threshold is 0.88)
-```
-If no ID is found, we embed the entity's name and compare it to existing nodes using vector similarity. If the score is above 0.88, it's a match.
+
+If no ID is found, we embed the entity's name and compare it to existing nodes using vector similarity. Example: `"Kerberos TGS ticket roasting"` → embed → T1558.003 has cosine similarity 0.92 → match! (threshold is 0.88).
 
 **Tier 3 — LLM Verdict** (slow, costs one LLM call)
-```
-Similarity is 0.84 (between 0.80 and 0.88 — borderline)
-Ask LLM: "Are 'Kerberos TGS roasting' and 'T1558.003 Kerberoasting' the same?"
-LLM: "YES — both refer to requesting TGS tickets and cracking them offline."
-```
-For borderline cases, we ask the LLM to make the final call. This is expensive, so it only runs when Tiers 1 and 2 are inconclusive.
+
+For borderline cases (similarity between 0.80 and 0.88), we ask the LLM: *"Are 'Kerberos TGS roasting' and 'T1558.003 Kerberoasting' the same?"* → LLM: *"YES — both refer to requesting TGS tickets and cracking them offline."* This is expensive, so it only runs when Tiers 1 and 2 are inconclusive.
 
 ---
 
@@ -345,6 +422,11 @@ Provenance means **tracking where every piece of data came from**. In CRTKB, eve
 | `batch_id` | Which ingestion run | UUID for traceability |
 | `extracted_at` | Timestamp | `"2026-04-16T14:30:00Z"` |
 | `stix_description` | CTI context from STIX | `"APT29 used Mimikatz to dump credentials"` |
+
+```mermaid
+graph LR
+    A((APT29)) -->|"USES_TECHNIQUE\n─────────────────\nsource_name: mitre-attack\nconfidence: 1.0\nbatch_id: abc-123\nextracted_at: 2026-04-16"| B((Kerberoasting))
+```
 
 ### Why provenance matters
 
@@ -367,32 +449,28 @@ Without RAG, an LLM answers from memory (which may be outdated or wrong). With R
 
 ### How our hybrid retrieval works
 
-```
-User: "What tools does APT29 use for credential access?"
-                    │
-                    ▼
-            ┌── Query Router ──┐
-            │                  │
-    "how many..." ?      everything else
-            │                  │
-            ▼                  ▼
-    Text2Cypher           Vector Search
-    (generates Cypher     (embed question,
-     query directly)       find top-5 nodes)
-            │                  │
-            │                  ▼
-            │            2-hop Cypher Fan-out
-            │            (from each hit, traverse
-            │             1-2 hops to find context)
-            │                  │
-            └──────┬───────────┘
-                   ▼
-            LLM Answer Generation
-            (with citation instructions)
-                   │
-                   ▼
-            "APT29 uses Mimikatz (S0002) for
-             credential dumping [mitre-attack]..."
+```mermaid
+flowchart TD
+    Q["User: What tools does APT29\nuse for credential access?"]
+    Router{"Query Router"}
+    T2C["Text2Cypher\n(generates Cypher query)"]
+    VS["Vector Search\n(embed question,\nfind top-5 nodes)"]
+    Fanout["2-hop Cypher Fan-out\n(traverse 1-2 hops\nper hit for context)"]
+    LLM["LLM Answer Generation\n(with citation instructions)"]
+    A["APT29 uses Mimikatz (S0002)\nfor credential dumping\n[mitre-attack]"]
+
+    Q --> Router
+    Router -->|"'how many...'\n'list all...'"| T2C
+    Router -->|everything else| VS
+    VS --> Fanout
+    T2C --> LLM
+    Fanout --> LLM
+    LLM --> A
+
+    style Router fill:#fff3e0,stroke:#ef6c00
+    style VS fill:#e8f4fd,stroke:#1a73e8
+    style T2C fill:#e8f4fd,stroke:#1a73e8
+    style LLM fill:#e8f5e9,stroke:#2e7d32
 ```
 
 ### Two retrieval modes
@@ -408,10 +486,31 @@ User: "What tools does APT29 use for credential access?"
 
 When vector search finds a matching node (e.g., "Kerberoasting"), we don't just return that node — we **traverse 2 hops** in the graph to collect context:
 
-```
-Hop 0: Kerberoasting (the vector match)
-Hop 1: → Credential Access (tactic), → Mimikatz (tool), → M1027 (mitigation), ...
-Hop 2: → APT29 uses Mimikatz, → Mimikatz runs on Windows, ...
+```mermaid
+graph LR
+    subgraph "Hop 0 (vector match)"
+        K((Kerberoasting\nT1558.003))
+    end
+    subgraph "Hop 1"
+        CA((Credential Access))
+        MK((Mimikatz))
+        M1027((M1027\nPassword Policies))
+        AT((Atomic Test))
+    end
+    subgraph "Hop 2"
+        APT29((APT29))
+        Win((Windows))
+    end
+
+    K -->|PART_OF_TACTIC| CA
+    MK -->|USES_TECHNIQUE| K
+    M1027 -->|MITIGATES| K
+    AT -->|IMPLEMENTS| K
+    APT29 -->|USES_TECHNIQUE| K
+    APT29 -->|USES_TOOL| MK
+    MK -->|RUNS_ON| Win
+
+    style K fill:#ffccbc,stroke:#bf360c
 ```
 
 This gives the LLM rich context to generate a comprehensive answer. We limit to 2 hops because the ATT&CK graph is highly connected — 3 hops would return thousands of nodes and overwhelm the LLM.
@@ -531,29 +630,71 @@ MATCH (t:Technique) RETURN count(t)
 
 ### Phase 1: Structured backbone (Week 1)
 
-```
-enterprise-attack.json ──▶ attack_stix.py ──▶ 2,565 nodes + 22,630 rels ─┐
-T*/T*.yaml             ──▶ atomic_red_team.py ──▶ 1,784 nodes + 3,700 rels ├──▶ Neo4j
-lolbas.json            ──▶ lolbas.py ──▶ 232 nodes + 296 rels             ─┘
+```mermaid
+flowchart LR
+    STIX["enterprise-attack.json"]
+    ART["T*/T*.yaml"]
+    LOL["lolbas.json"]
+
+    P1["attack_stix.py"]
+    P2["atomic_red_team.py"]
+    P3["lolbas.py"]
+
+    N1["2,565 nodes\n22,630 rels"]
+    N2["1,784 nodes\n3,700 rels"]
+    N3["232 nodes\n296 rels"]
+
+    DB[("Neo4j")]
+
+    STIX --> P1 --> N1 --> DB
+    ART --> P2 --> N2 --> DB
+    LOL --> P3 --> N3 --> DB
 ```
 
 ### Phase 2: LLM enrichment (Week 2)
 
-```
-blog_post.md ──▶ 8-stage pipeline ──▶ new nodes + edges ──▶ Neo4j
-                 (chunk → extract → resolve → merge)
+```mermaid
+flowchart LR
+    Doc["blog_post.md"]
+    Chunk["Chunk"]
+    Extract["Entity +\nRelation\nExtraction"]
+    Resolve["Entity\nResolution"]
+    Merge["Graph\nMerge"]
+    DB[("Neo4j")]
+
+    Doc --> Chunk --> Extract --> Resolve --> Merge --> DB
+
+    style Extract fill:#e8f4fd,stroke:#1a73e8
+    style Resolve fill:#fff3e0,stroke:#ef6c00
 ```
 
 ### Phase 3: Query (Week 3)
 
-```
-User question ──▶ embed ──▶ vector search ──▶ 2-hop fan-out ──▶ LLM ──▶ cited answer
+```mermaid
+flowchart LR
+    Q["User question"]
+    Embed["Embed\n(BGE-large)"]
+    VS["Vector\nSearch"]
+    Hop["2-hop\nFan-out"]
+    LLM["LLM Answer\nGeneration"]
+    A["Cited answer"]
+
+    Q --> Embed --> VS --> Hop --> LLM --> A
+
+    style LLM fill:#e8f5e9,stroke:#2e7d32
 ```
 
 ### Phase 4: Evaluate (Week 4)
 
-```
-30 questions ──▶ query layer ──▶ answers ──▶ RAGAS metrics ──▶ results table
+```mermaid
+flowchart LR
+    BM["30 questions\n(easy/medium/hard)"]
+    QL["Query Layer"]
+    Ans["Generated\nAnswers"]
+    Metrics["RAGAS Metrics\n6 dimensions"]
+    Table["Results Table\nper-tier breakdown"]
+
+    BM --> QL --> Ans --> Metrics --> Table
 ```
 
 ### File map

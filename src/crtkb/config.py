@@ -19,10 +19,11 @@ class Settings(BaseSettings):
     neo4j_password: str = "changeme"
     neo4j_database: str = "neo4j"
 
-    # ── vLLM ─────────────────────────────────────────────────────────────
-    vllm_base_url: str = "http://localhost:8000/v1"
-    vllm_model_name: str = "Qwen/Qwen2.5-72B-Instruct"
-    vllm_api_key: str = "not-needed"
+    # ── LLM ──────────────────────────────────────────────────────────────
+    llm_provider: str = "google"  # "google" (Gemini), "openai", or "vllm"
+    llm_model_name: str = "gemini-2.5-flash"
+    llm_api_key: str = ""
+    llm_base_url: str = ""  # only needed for vllm / custom OpenAI endpoints
 
     # ── Embeddings ───────────────────────────────────────────────────────
     embedding_model: str = "BAAI/bge-large-en-v1.5"

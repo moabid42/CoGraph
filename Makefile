@@ -31,7 +31,7 @@ build-indexes:
 
 # Query (interactive)
 query:
-	python -c "from crtkb.query.rag import interactive; interactive()"
+	python -c "from cograph.query.rag import interactive; interactive()"
 
 # Evaluation
 eval:

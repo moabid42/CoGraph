@@ -11,9 +11,9 @@ import sys
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 
-from crtkb.config import settings
-from crtkb.utils.embedder import embed_text
-from crtkb.utils.neo4j_client import close_driver, get_driver
+from cograph.config import settings
+from cograph.utils.embedder import embed_text
+from cograph.utils.neo4j_client import close_driver, get_driver
 
 logger = logging.getLogger(__name__)
 

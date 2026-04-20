@@ -206,7 +206,7 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# CRTKB-specific — LLM weight files
+# CoGraph-specific — LLM weight files
 /models/
 *.bin
 *.safetensors

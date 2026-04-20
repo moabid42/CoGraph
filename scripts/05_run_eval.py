@@ -13,8 +13,8 @@ from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 
-from crtkb.eval.benchmark import load_questions, print_results_table, run_benchmark
-from crtkb.utils.neo4j_client import close_driver
+from cograph.eval.benchmark import load_questions, print_results_table, run_benchmark
+from cograph.utils.neo4j_client import close_driver
 
 
 def main() -> None:

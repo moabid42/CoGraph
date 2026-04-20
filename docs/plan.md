@@ -1,8 +1,8 @@
-# CRTKB Architecture & Implementation Plan
+# CoGraph Architecture & Implementation Plan
 
 ## Context
 
-CRTKB (Cognitive Red Teaming Knowledge Base) is a bachelor thesis project that builds a Neo4j-backed knowledge graph unifying offensive security tradecraft. The goal is a queryable, fully-cited representation of attack techniques, procedures, tools, and defenses — initially scoped to Windows/Active Directory. An LLM-powered ingestion pipeline extracts entities from heterogeneous sources, resolves duplicates, and merges them into the graph with mandatory provenance. A hybrid query layer combines vector search with graph traversal for citation-backed answers. The system is evaluated against a 30-question benchmark using RAGAS metrics.
+CoGraph (Cognitive Red Teaming Knowledge Base) is a bachelor thesis project that builds a Neo4j-backed knowledge graph unifying offensive security tradecraft. The goal is a queryable, fully-cited representation of attack techniques, procedures, tools, and defenses — initially scoped to Windows/Active Directory. An LLM-powered ingestion pipeline extracts entities from heterogeneous sources, resolves duplicates, and merges them into the graph with mandatory provenance. A hybrid query layer combines vector search with graph traversal for citation-backed answers. The system is evaluated against a 30-question benchmark using RAGAS metrics.
 
 **Current state**: Only raw data sources exist (ATT&CK STIX, Atomic Red Team, LOLBAS). No application code, no Docker setup, no schema — everything needs to be built.
 
@@ -27,7 +27,7 @@ CoGraph/
 │   └── neo4j/
 │       └── neo4j.conf
 │
-├── src/crtkb/
+├── src/cograph/
 │   ├── __init__.py
 │   ├── config.py                         # Pydantic Settings (env vars, paths, thresholds)
 │   │
@@ -232,7 +232,7 @@ CREATE FULLTEXT INDEX alias_fulltext IF NOT EXISTS
 ### Parser Protocol
 
 ```python
-# src/crtkb/parsers/base.py
+# src/cograph/parsers/base.py
 class SourceParser(Protocol):
     source_name: str
     def parse(self) -> tuple[list[NodeRecord], list[RelRecord]]: ...
@@ -240,7 +240,7 @@ class SourceParser(Protocol):
 
 Every parser returns flat lists of Pydantic `NodeRecord` / `RelRecord`. The load script batches these into `UNWIND ... MERGE` Cypher statements (batch size 500).
 
-### ATT&CK STIX Parser (`src/crtkb/parsers/attack_stix.py`)
+### ATT&CK STIX Parser (`src/cograph/parsers/attack_stix.py`)
 
 **Input**: `data/attack-stix-data/enterprise-attack/enterprise-attack.json` (50MB, 24,772 objects)
 
@@ -258,7 +258,7 @@ Every parser returns flat lists of Pydantic `NodeRecord` / `RelRecord`. The load
 
 **Expected output**: ~1,863 nodes + ~19,848 relationships
 
-### Atomic Red Team Parser (`src/crtkb/parsers/atomic_red_team.py`)
+### Atomic Red Team Parser (`src/cograph/parsers/atomic_red_team.py`)
 
 **Input**: `data/atomic-red-team/atomics/T*/T*.yaml` (330 directories, skip `Indexes/`)
 
@@ -270,7 +270,7 @@ Every parser returns flat lists of Pydantic `NodeRecord` / `RelRecord`. The load
 
 **Expected output**: ~1,756 Procedure nodes, ~1,756 IMPLEMENTS edges, ~1,756 RUNS_ON edges
 
-### LOLBAS Parser (`src/crtkb/parsers/lolbas.py`)
+### LOLBAS Parser (`src/cograph/parsers/lolbas.py`)
 
 **Input**: `data/lolbas/lolbas.json` (232 entries)
 
@@ -345,7 +345,7 @@ schema = {
 
 LLM: `OpenAILLM` pointed at vLLM endpoint (`http://localhost:8000/v1`), model `Qwen/Qwen2.5-72B-Instruct`, temperature 0.0.
 
-### Three-Tier Entity Resolution (`src/crtkb/pipeline/stage_5_entity_res.py`)
+### Three-Tier Entity Resolution (`src/cograph/pipeline/stage_5_entity_res.py`)
 
 **Tier 1 — Canonical ID Lookup** (deterministic, zero cost):
 Regex `[TSGCM]\d{4}(?:\.\d{3})?` extracts ATT&CK IDs from LLM-extracted entity text. Direct graph lookup.
@@ -366,7 +366,7 @@ Ingest Kerberoasting section from InternalAllTheThings. Verify LLM-extracted ent
 
 ## Week 3 — Query Layer
 
-### Hybrid Retrieval (`src/crtkb/query/retriever.py`)
+### Hybrid Retrieval (`src/cograph/query/retriever.py`)
 
 **Flow**: User question -> BGE-large embedding -> vector search top-K (K=5) -> 2-hop Cypher fan-out per hit -> aggregate context -> LLM answer generation with citations
 
@@ -388,7 +388,7 @@ Keyword-based router (no LLM needed):
 - "how many", "count", "list all", "which groups" -> `Text2CypherRetriever` (structural queries)
 - Everything else -> `VectorCypherRetriever` (semantic queries)
 
-### Answer Generation (`src/crtkb/query/rag.py`)
+### Answer Generation (`src/cograph/query/rag.py`)
 
 ```python
 rag = GraphRAG(
@@ -410,7 +410,7 @@ Embed `name + first 500 chars of description` as a batch post-processing step af
 
 ## Week 4 — Evaluation
 
-### 30-Question Benchmark (`src/crtkb/eval/questions.yaml`)
+### 30-Question Benchmark (`src/cograph/eval/questions.yaml`)
 
 - **Easy (10)**: Single-hop lookups. "What tactic does T1558 belong to?" / "List sub-techniques of T1003."
 - **Medium (10)**: Multi-hop reasoning. "What tools does APT29 use for credential access?" / "Which mitigations apply to Kerberoasting?"
@@ -464,18 +464,18 @@ python-dotenv = ">=1.0.0"           # .env loading
 ## Implementation Order
 
 1. **`pyproject.toml`**, **`docker-compose.yml`**, **`.env.example`**, **`Makefile`**
-2. **`src/crtkb/config.py`** — Pydantic Settings with all env vars
-3. **`src/crtkb/ontology/`** — `schema.py` constants + `schema_init.cypher`
-4. **`src/crtkb/models/`** — Pydantic models for nodes, relationships, provenance
-5. **`src/crtkb/utils/neo4j_client.py`** — Driver singleton, schema init
-6. **`src/crtkb/parsers/`** — ATT&CK STIX, Atomic RT, LOLBAS, D3FEND stub
+2. **`src/cograph/config.py`** — Pydantic Settings with all env vars
+3. **`src/cograph/ontology/`** — `schema.py` constants + `schema_init.cypher`
+4. **`src/cograph/models/`** — Pydantic models for nodes, relationships, provenance
+5. **`src/cograph/utils/neo4j_client.py`** — Driver singleton, schema init
+6. **`src/cograph/parsers/`** — ATT&CK STIX, Atomic RT, LOLBAS, D3FEND stub
 7. **`scripts/01_init_schema.py`**, **`scripts/02_load_structured.py`**, **`scripts/smoke_test.py`**
-8. **`src/crtkb/utils/llm_client.py`**, **`embedder.py`**, **`langfuse_client.py`**
-9. **`src/crtkb/pipeline/`** — All 8 stages
+8. **`src/cograph/utils/llm_client.py`**, **`embedder.py`**, **`langfuse_client.py`**
+9. **`src/cograph/pipeline/`** — All 8 stages
 10. **`scripts/03_run_pipeline.py`**
 11. **`scripts/04_build_indexes.py`**
-12. **`src/crtkb/query/`** — Retriever, Cypher QA, RAG, prompts
-13. **`src/crtkb/eval/`** — Benchmark, metrics, judge, questions.yaml
+12. **`src/cograph/query/`** — Retriever, Cypher QA, RAG, prompts
+13. **`src/cograph/eval/`** — Benchmark, metrics, judge, questions.yaml
 14. **`scripts/05_run_eval.py`**
 
 ## Verification

@@ -11,7 +11,7 @@ import sys
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 
-from crtkb.utils.neo4j_client import init_schema, close_driver
+from cograph.utils.neo4j_client import init_schema, close_driver
 
 
 def main() -> None:

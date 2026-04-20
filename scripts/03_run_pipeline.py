@@ -13,8 +13,8 @@ import sys
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 
-from crtkb.pipeline.runner import run_pipeline
-from crtkb.utils.neo4j_client import close_driver
+from cograph.pipeline.runner import run_pipeline
+from cograph.utils.neo4j_client import close_driver
 
 
 def main() -> None:

@@ -1,6 +1,6 @@
-# CRTKB — Concepts & Technology Explained
+# CoGraph — Concepts & Technology Explained
 
-This document explains every concept, tool, and technology used in the CRTKB project. Read this before diving into the code.
+This document explains every concept, tool, and technology used in the CoGraph project. Read this before diving into the code.
 
 ---
 
@@ -31,7 +31,7 @@ Imagine you're a red teamer (someone who tests an organisation's security by sim
 - "What defences exist against Pass-the-Hash?"
 - "Which threat groups target Active Directory?"
 
-The answers are scattered across dozens of sources: MITRE ATT&CK, blog posts, tool documentation, community wikis — all in different formats. CRTKB solves this by:
+The answers are scattered across dozens of sources: MITRE ATT&CK, blog posts, tool documentation, community wikis — all in different formats. CoGraph solves this by:
 
 1. **Collecting** data from these sources
 2. **Structuring** it into a knowledge graph (nodes and edges)
@@ -116,7 +116,7 @@ APOC (Awesome Procedures On Cypher) is a Neo4j plugin that adds hundreds of util
 
 ## 3. The Ontology
 
-An **ontology** is a formal definition of "what kinds of things exist and how they can relate". It's the schema of our knowledge graph. Ours is defined in `src/crtkb/ontology/schema.py`.
+An **ontology** is a formal definition of "what kinds of things exist and how they can relate". It's the schema of our knowledge graph. Ours is defined in `src/cograph/ontology/schema.py`.
 
 ### Ontology overview
 
@@ -293,7 +293,7 @@ This is much more powerful than keyword search because it understands **meaning*
 
 ### What is an LLM?
 
-A large language model (like GPT-4, Gemini, Llama) is an AI that understands and generates text. In CRTKB, we use an LLM for three things:
+A large language model (like GPT-4, Gemini, Llama) is an AI that understands and generates text. In CoGraph, we use an LLM for three things:
 
 1. **Entity extraction** (pipeline stage 3): "Read this blog post and find all attack techniques, tools, and threat groups mentioned."
 2. **Relation extraction** (pipeline stage 4): "Given these entities, what relationships exist between them?"
@@ -305,9 +305,9 @@ Configurable via `.env`:
 
 | Provider | Setting | When to use |
 |----------|---------|-------------|
-| **Google Gemini** | `CRTKB_LLM_PROVIDER=google` | Default — free tier available, good quality |
-| **OpenAI** | `CRTKB_LLM_PROVIDER=openai` | If you have an OpenAI key |
-| **vLLM** | `CRTKB_LLM_PROVIDER=vllm` | Self-hosted 70B model on GPU server (stackIT) |
+| **Google Gemini** | `COGRAPH_LLM_PROVIDER=google` | Default — free tier available, good quality |
+| **OpenAI** | `COGRAPH_LLM_PROVIDER=openai` | If you have an OpenAI key |
+| **vLLM** | `COGRAPH_LLM_PROVIDER=vllm` | Self-hosted 70B model on GPU server (stackIT) |
 
 The LLM is accessed via the **OpenAI-compatible API** — all three providers expose the same interface, so our code works with any of them.
 
@@ -412,7 +412,7 @@ For borderline cases (similarity between 0.80 and 0.88), we ask the LLM: *"Are '
 
 ## 10. Provenance
 
-Provenance means **tracking where every piece of data came from**. In CRTKB, every relationship in the graph carries metadata:
+Provenance means **tracking where every piece of data came from**. In CoGraph, every relationship in the graph carries metadata:
 
 | Property | Meaning | Example |
 |----------|---------|---------|
@@ -587,7 +587,7 @@ If you try to create `Technique(attack_id=123)`, Pydantic raises an error becaus
 
 ### Pydantic Settings
 
-An extension that loads configuration from environment variables. Our `Settings` class reads `CRTKB_NEO4J_URI` from the environment (or `.env` file) and makes it available as `settings.neo4j_uri` in Python.
+An extension that loads configuration from environment variables. Our `Settings` class reads `COGRAPH_NEO4J_URI` from the environment (or `.env` file) and makes it available as `settings.neo4j_uri` in Python.
 
 ### sentence-transformers
 
@@ -701,12 +701,12 @@ flowchart LR
 
 | Directory | Purpose | When |
 |-----------|---------|------|
-| `src/crtkb/ontology/` | Schema definition (what types of things exist) | Foundation |
-| `src/crtkb/models/` | Python data models (Pydantic) | Foundation |
-| `src/crtkb/config.py` | All settings (Neo4j, LLM, thresholds) | Foundation |
-| `src/crtkb/utils/` | Shared clients (Neo4j, LLM, embedder) | Foundation |
-| `src/crtkb/parsers/` | Deterministic parsers (ATT&CK, Atomic, LOLBAS) | Week 1 |
-| `src/crtkb/pipeline/` | 8-stage LLM extraction pipeline | Week 2 |
-| `src/crtkb/query/` | Hybrid query layer (vector + Cypher + RAG) | Week 3 |
-| `src/crtkb/eval/` | Benchmark, metrics, LLM judge | Week 4 |
+| `src/cograph/ontology/` | Schema definition (what types of things exist) | Foundation |
+| `src/cograph/models/` | Python data models (Pydantic) | Foundation |
+| `src/cograph/config.py` | All settings (Neo4j, LLM, thresholds) | Foundation |
+| `src/cograph/utils/` | Shared clients (Neo4j, LLM, embedder) | Foundation |
+| `src/cograph/parsers/` | Deterministic parsers (ATT&CK, Atomic, LOLBAS) | Week 1 |
+| `src/cograph/pipeline/` | 8-stage LLM extraction pipeline | Week 2 |
+| `src/cograph/query/` | Hybrid query layer (vector + Cypher + RAG) | Week 3 |
+| `src/cograph/eval/` | Benchmark, metrics, LLM judge | Week 4 |
 | `scripts/` | Entry-point scripts (run in numbered order) | All weeks |
